@@ -1,2 +1,17 @@
 @import './responsive.css';
-@import './reset.css'
+@import './reset.css';
+
+/* Shared palette (from the Figma "chroma v2" design). */
+:root {
+    --color-bg: #03241c;
+    --color-surface: #061c15;
+    --color-surface-end: #007445;
+    --color-text: #ffffff;
+    --color-mint: #5fefc1;
+    --color-red: #e4495c;
+    --color-purple: #c65fef;
+    --color-lime: #8def5f;
+    --color-gold: #aa8027;
+    --color-gold-border: #f8c349;
+    --color-line: rgba(255, 255, 255, 0.35);
+}
