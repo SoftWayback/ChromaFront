@@ -5,17 +5,45 @@
     import { logout } from "$lib/api";
     import { session, clearSession } from "$lib/session.svelte.js";
 
+    // Icons: SVG children drawn on a 24×24 stroke grid (Lucide-style, MIT).
     const links = [
-        { href: "/dashboard", label: "Dashboard" },
-        { href: "/entities", label: "Gestion entité" },
-        { href: "/articles", label: "Gestion Article" },
-        { href: "/db", label: "Gestion DB" }
+        {
+            href: "/dashboard",
+            label: "Dashboard",
+            icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>'
+        },
+        {
+            href: "/entities",
+            label: "Gestion entité",
+            icon: '<circle cx="12" cy="12" r="2"/><path d="M12 2v4"/><path d="m6.8 15-3.5 2"/><path d="m20.7 7-3.5 2"/><path d="M6.8 9 3.3 7"/><path d="m20.7 17-3.5-2"/><path d="m9 22 3-8 3 8"/><path d="M8 22h8"/><path d="M18 18.7a9 9 0 1 0-12 0"/>'
+        },
+        {
+            href: "/articles",
+            label: "Gestion Article",
+            icon: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>'
+        },
+        {
+            href: "/stats",
+            label: "Statistiques",
+            icon: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'
+        },
+        {
+            href: "/db",
+            label: "Gestion DB",
+            icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>'
+        }
     ];
 
     async function handleLogout() {
         await logout();
         clearSession();
         goto("/");
+    }
+
+    /** Active on the section itself and its sub-pages (e.g. /entities/:id). */
+    function isActive(/** @type {string} */ href) {
+        const path = page.url.pathname;
+        return path === href || path.startsWith(`${href}/`);
     }
 </script>
 
@@ -28,19 +56,21 @@
                 <a
                     href={link.href}
                     class="nav-link"
-                    class:active={page.url.pathname === link.href}
+                    class:active={isActive(link.href)}
                     aria-current={page.url.pathname === link.href ? "page" : undefined}
                 >
                     <svg
                         class="nav-icon"
-                        viewBox="0 0 27 27"
-                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
                         xmlns="http://www.w3.org/2000/svg"
                         aria-hidden="true"
                     >
-                        <path
-                            d="M21.9029 0H5.07898C2.27551 0.00370794 0.00370794 2.27551 0 5.07898V21.9029C0.00370794 24.7164 2.28365 26.9963 5.09711 27H9.28125H17.7188H21.921C24.7246 26.9963 26.9963 24.7245 27 21.921V5.09711C26.9963 2.28365 24.7164 0.00370794 21.9029 0ZM10.125 1.6875H16.875V8.4375H10.125V1.6875ZM8.4375 25.3125H5.09711C3.21484 25.3105 1.68946 23.7852 1.6875 21.9029V18.5625H8.4375V25.3125ZM16.875 25.3125H10.125V18.5625H16.875V25.3125ZM25.3125 21.921C25.3106 23.7933 23.7933 25.3106 21.921 25.3125H18.5625V18.5625H25.3125V21.921ZM25.3125 16.875H1.6875V5.07898C1.68935 3.2067 3.2067 1.68935 5.07898 1.6875H8.4375V9.28125C8.4375 9.28094 8.4375 9.28156 8.4375 9.28125C8.43781 9.747 8.8155 10.1253 9.28125 10.125H17.7188H25.3125V16.875ZM25.3125 8.4375H18.5625V1.6875H21.9029C23.7852 1.68946 25.3105 3.21484 25.3125 5.09711V8.4375Z"
-                        />
+                        {@html link.icon}
                     </svg>
                     {link.label}
                 </a>
@@ -54,7 +84,24 @@
                 {session.user.name ?? session.user.email}
             </p>
         {/if}
-        <button type="button" class="logout" onclick={handleLogout}>Déconnexion</button>
+        <button type="button" class="logout" onclick={handleLogout}>
+            <svg
+                class="nav-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Déconnexion
+        </button>
     </div>
 </nav>
 
@@ -118,6 +165,9 @@
     }
 
     .logout {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         padding: 0;
         border: none;
         background: none;

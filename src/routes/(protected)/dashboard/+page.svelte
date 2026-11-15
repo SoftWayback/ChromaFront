@@ -39,6 +39,8 @@
     let liveHasMore = $state(true);
     let liveLoaded = $state(0);
     let liveLoading = $state(false);
+    /** @type {{ key: "name" | "live" | "previous", dir: "asc" | "desc" }} */
+    let liveSort = $state({ key: "name", dir: "asc" });
 
     let stats = $state(FALLBACK.stats);
 
@@ -61,13 +63,23 @@
         if (liveLoading) return;
         liveLoading = true;
         const offset = append ? liveLoaded : 0;
-        const data = await loadJSON(`/dashboard/live?limit=${LIVE_LIMIT}&offset=${offset}`);
+        const { key, dir } = liveSort;
+        const data = await loadJSON(`/dashboard/live?limit=${LIVE_LIMIT}&offset=${offset}&sort=${key}&dir=${dir}`);
         if (data?.rows) {
             liveRows = append ? [...liveRows, ...data.rows] : data.rows;
             liveLoaded = offset + data.rows.length;
             liveHasMore = Boolean(data.hasMore);
         }
         liveLoading = false;
+    }
+
+    /** @param {"name" | "live" | "previous"} key */
+    function onSort(key) {
+        // Same column toggles direction; a new column starts with the most useful order
+        // (A→Z for names, longest wait first for times).
+        if (liveSort.key === key) liveSort = { key, dir: liveSort.dir === "asc" ? "desc" : "asc" };
+        else liveSort = { key, dir: key === "name" ? "asc" : "desc" };
+        loadLive();
     }
 
     async function loadStats() {
@@ -109,6 +121,8 @@
                 rows={liveRows}
                 hasMore={liveHasMore}
                 onMore={() => loadLive({ append: true })}
+                sort={liveSort}
+                {onSort}
             />
             <StatsPanel items={stats} />
         </div>
@@ -127,26 +141,27 @@
     .content {
         flex: 1;
         min-width: 0;
-        padding: 48px 56px;
+        padding: 36px 82px 64px 76px;
         color: var(--color-text);
         font-family: "Agdasima", sans-serif;
     }
 
     h1 {
-        margin-bottom: 32px;
-        font-size: 4rem;
+        margin-bottom: 8px;
+        font-size: 64px;
         font-weight: 400;
     }
 
     .top {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 420px;
-        gap: 24px 64px;
+        grid-template-columns: minmax(0, 820px) 473px;
+        justify-content: space-between;
+        gap: 24px 48px;
         align-items: start;
-        margin-bottom: 56px;
+        margin-bottom: 58px;
     }
 
-    @media (max-width: 1100px) {
+    @media (max-width: 1400px) {
         .top {
             grid-template-columns: 1fr;
         }

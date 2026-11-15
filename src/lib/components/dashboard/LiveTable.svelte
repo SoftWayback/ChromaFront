@@ -1,17 +1,48 @@
 <script>
-    /** @typedef {{ id: string | number, name: string, live: string, previous: string }} LiveRow */
+    import sortIcon from "$lib/assets/sort.svg";
 
-    /** @type {{ rows?: LiveRow[], hasMore?: boolean, onMore?: () => void }} */
-    let { rows = [], hasMore = false, onMore } = $props();
+    /** @typedef {{ id: string | number, name: string, live: string, previous: string }} LiveRow */
+    /** @typedef {{ key: "name" | "live" | "previous", dir: "asc" | "desc" }} LiveSort */
+
+    /**
+     * @type {{
+     *   rows?: LiveRow[],
+     *   hasMore?: boolean,
+     *   onMore?: () => void,
+     *   sort?: LiveSort,
+     *   onSort?: (key: LiveSort["key"]) => void
+     * }}
+     */
+    let { rows = [], hasMore = false, onMore, sort, onSort } = $props();
+
+    /** @type {{ key: LiveSort["key"], label: string, cls: string }[]} */
+    const columns = [
+        { key: "name", label: "nom", cls: "col-name" },
+        { key: "live", label: "live", cls: "col-num" },
+        { key: "previous", label: "precedent", cls: "col-num" }
+    ];
 </script>
 
 <section class="live-table">
     <table>
         <thead>
             <tr>
-                <th class="col-name"><span>nom</span>{@render caret()}</th>
-                <th class="col-num"><span>live</span>{@render caret()}</th>
-                <th class="col-num"><span>precedent</span>{@render caret()}</th>
+                {#each columns as col}
+                    <th
+                        class={col.cls}
+                        aria-sort={sort?.key === col.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
+                    >
+                        <button
+                            type="button"
+                            class="sort-btn"
+                            class:active={sort?.key === col.key}
+                            onclick={() => onSort?.(col.key)}
+                        >
+                            {col.label}
+                            <img src={sortIcon} alt="" class="sort-icon" width="15" height="17" />
+                        </button>
+                    </th>
+                {/each}
                 <th class="col-action"><span>action</span></th>
             </tr>
         </thead>
@@ -41,21 +72,9 @@
     {/if}
 </section>
 
-{#snippet caret()}
-    <svg class="caret" viewBox="0 0 12 8" aria-hidden="true">
-        <path
-            d="M1 1l5 5 5-5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-        />
-    </svg>
-{/snippet}
-
 <style>
     .live-table {
+        max-width: 820px;
         font-family: "Agdasima", sans-serif;
         color: var(--color-text);
     }
@@ -66,38 +85,55 @@
     }
 
     th {
-        padding: 0 8px 10px;
-        font-size: 1rem;
+        padding: 0 4px 6px;
+        font-size: 24px;
         font-weight: 400;
         text-align: left;
         color: var(--color-text);
-        border-bottom: 1px solid var(--color-line);
+        border-bottom: 1px solid var(--color-mint);
     }
 
-    th span {
-        vertical-align: middle;
+    .sort-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
     }
 
-    .caret {
-        width: 12px;
-        height: 8px;
-        margin-left: 6px;
+    .sort-btn.active {
         color: var(--color-mint);
-        vertical-align: middle;
+    }
+
+    .sort-icon {
+        width: 15px;
+        height: 17px;
     }
 
     td {
-        padding: 12px 8px;
-        font-size: 1.25rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 5px 4px 6px;
+        font-size: 32px;
+        border-bottom: 1px solid #0f0f0f;
+    }
+
+    tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .col-name {
+        width: 55.5%;
     }
 
     .col-num {
-        width: 18%;
+        width: 19.75%;
     }
 
     .col-action {
-        width: 72px;
+        width: 5%;
         text-align: center;
     }
 
@@ -119,19 +155,20 @@
     }
 
     .action-btn svg {
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
     }
 
     .see-more {
-        margin-top: 16px;
-        padding: 4px 14px;
+        width: 109px;
+        height: 32px;
+        margin-top: 18px;
         border: 1px solid var(--color-gold-border);
-        border-radius: 5px;
+        border-radius: 10px;
         background: var(--color-gold);
         color: var(--color-text);
         font-family: inherit;
-        font-size: 0.95rem;
+        font-size: 20px;
         cursor: pointer;
     }
 </style>

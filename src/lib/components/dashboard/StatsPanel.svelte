@@ -22,7 +22,9 @@
     .stats-panel {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 15px;
+        width: 100%;
+        max-width: 473px;
         font-family: "Agdasima", sans-serif;
         color: var(--color-text);
     }
@@ -30,8 +32,8 @@
     .card {
         display: flex;
         flex-direction: column;
-        gap: 14px;
-        padding: 18px 22px;
+        gap: 20px;
+        padding: 17px 17px 15px 22px;
         border: 1px solid var(--color-mint);
         border-radius: 5px;
     }
@@ -41,7 +43,8 @@
         align-items: baseline;
         justify-content: space-between;
         gap: 16px;
-        font-size: 1.35rem;
+        font-size: 32px;
+        line-height: 38px;
     }
 
     dd {
@@ -49,13 +52,13 @@
     }
 
     .admin {
-        padding: 10px;
+        height: 49px;
         border: 1px solid var(--color-red);
         border-radius: 5px;
         background: none;
         color: var(--color-text);
         font-family: inherit;
-        font-size: 1.35rem;
+        font-size: 32px;
         text-align: center;
         cursor: pointer;
     }
