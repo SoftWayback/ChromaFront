@@ -32,7 +32,10 @@
     let entries = $state([]);
     let cacheLoading = $state(true);
     let cacheError = $state("");
-    const sorted = $derived(sortCacheEntries(entries));
+    // GET /stats/cache leaves out the ~5 000 `ride:*` keys by default; if they ever come
+    // back (?rides=true / older backend), summarise them instead of rendering every row.
+    const rideCount = $derived(entries.filter((e) => e.key.startsWith("ride:")).length);
+    const sorted = $derived(sortCacheEntries(rideCount ? entries.filter((e) => !e.key.startsWith("ride:")) : entries));
 
     // ── period pickers ──
     let periods = $state(/** @type {StatsPeriods | null} */ (null));
@@ -145,8 +148,9 @@
         </header>
 
         <p class="hint">
-            « Tout recalculer » = baselines + depuis le début + 3 derniers jours + aujourd'hui + liste des périodes
-            (≈ 50 s). Le site public lit ces bundles en cache.
+            Le cache est pré-calculé automatiquement (préchauffage après chaque relevé, la nuit, à minuit et au
+            démarrage) : le site public lit ces bundles sans attendre. « Tout recalculer » (baselines + depuis le début
+            + 3 derniers jours + aujourd'hui + liste des périodes, ≈ 50 s) ne sert qu'à forcer un recalcul.
         </p>
 
         <div class="feedback" aria-live="polite">
@@ -231,7 +235,7 @@
                                 <th>Période</th>
                                 <th>Calculé</th>
                                 <th>Expiration</th>
-                                <th class="num">Taille</th>
+                                <th class="num" title="Taille compressée en base (TOAST), pas la taille JSON">Taille stockée</th>
                                 <th><span class="sr-only">Action</span></th>
                             </tr>
                         </thead>
@@ -267,6 +271,13 @@
                         </tbody>
                     </table>
                 </div>
+            {/if}
+            {#if rideCount}
+                <p class="meta rides-note">
+                    + {formatNumber(rideCount)} entrées par attraction — voir <a href="/db">Gestion DB</a>
+                </p>
+            {:else if !cacheLoading && !cacheError}
+                <p class="meta rides-note">Les entrées par attraction (ride:*) sont comptées dans <a href="/db">Gestion DB</a>.</p>
             {/if}
         </section>
 
@@ -620,6 +631,14 @@
         margin-bottom: 16px;
         font-size: 18px;
         opacity: 0.85;
+    }
+
+    .rides-note {
+        margin: 10px 0 0;
+    }
+
+    .rides-note a {
+        color: var(--color-mint);
     }
 
     .cards {

@@ -1,82 +1,247 @@
 <script>
     import sortIcon from "$lib/assets/sort.svg";
+    import { typeLabel } from "$lib/rides";
+    import { waitLevel, waitSortValue, waitText, waitTrend } from "$lib/dashboard";
 
-    /** @typedef {{ id: string | number, name: string, live: string, previous: string }} LiveRow */
+    /** @typedef {import("$lib/dashboard").LiveRide} LiveRide */
     /** @typedef {{ key: "name" | "live" | "previous", dir: "asc" | "desc" }} LiveSort */
 
     /**
      * @type {{
-     *   rows?: LiveRow[],
-     *   hasMore?: boolean,
-     *   onMore?: () => void,
-     *   sort?: LiveSort,
-     *   onSort?: (key: LiveSort["key"]) => void
+     *   rides?: LiveRide[],
+     *   loading?: boolean,
+     *   error?: string,
+     *   onRetry?: () => void
      * }}
      */
-    let { rows = [], hasMore = false, onMore, sort, onSort } = $props();
+    let { rides = [], loading = false, error = "", onRetry } = $props();
+
+    /** @type {LiveSort} */
+    let sort = $state({ key: "live", dir: "desc" });
+    let search = $state("");
+    let type = $state("all");
+    let openOnly = $state(false);
+
+    const TYPE_FILTERS = [
+        { key: "all", label: "Tous les types" },
+        { key: "coaster", label: "Coasters" },
+        { key: "flat", label: "Flat rides" },
+        { key: "dark", label: "Parcours scéniques" },
+        { key: "water", label: "Aquatiques" },
+        { key: "show", label: "Spectacles" },
+        { key: "virtualline", label: "VirtualLines" },
+        { key: "none", label: "Non catalogués" }
+    ];
 
     /** @type {{ key: LiveSort["key"], label: string, cls: string }[]} */
     const columns = [
-        { key: "name", label: "nom", cls: "col-name" },
-        { key: "live", label: "live", cls: "col-num" },
-        { key: "previous", label: "precedent", cls: "col-num" }
+        { key: "name", label: "Attraction", cls: "col-name" },
+        { key: "live", label: "Live", cls: "col-num" },
+        { key: "previous", label: "Précédent", cls: "col-num" }
     ];
+
+    /** @param {string} s */
+    const norm = (s) =>
+        s
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .toLowerCase();
+
+    const visible = $derived.by(() => {
+        const q = norm(search.trim());
+        const list = rides.filter((r) => {
+            if (type === "none" ? r.type != null : type !== "all" && r.type !== type) return false;
+            if (openOnly && !r.live.isOpen) return false;
+            if (q && !norm(`${r.name} ${r.land ?? ""}`).includes(q)) return false;
+            return true;
+        });
+        const sign = sort.dir === "asc" ? 1 : -1;
+        const byName = (/** @type {LiveRide} */ a, /** @type {LiveRide} */ b) =>
+            a.name.localeCompare(b.name, "fr", { numeric: true });
+        return list.sort((a, b) => {
+            if (sort.key === "name") return sign * byName(a, b);
+            const m = sort.key === "live" ? "live" : "previous";
+            return sign * (waitSortValue(a[m]) - waitSortValue(b[m])) || byName(a, b);
+        });
+    });
+
+    /** @param {LiveSort["key"]} key */
+    function onSort(key) {
+        // Same column toggles; a new column starts with A→Z for names, longest wait first for times.
+        if (sort.key === key) sort = { key, dir: sort.dir === "asc" ? "desc" : "asc" };
+        else sort = { key, dir: key === "name" ? "asc" : "desc" };
+    }
+
+    /** @param {string | null} t */
+    const typeClass = (t) => (t ? `type-${t}` : "type-none");
 </script>
 
-<section class="live-table">
-    <table>
-        <thead>
-            <tr>
-                {#each columns as col}
-                    <th
-                        class={col.cls}
-                        aria-sort={sort?.key === col.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}
-                    >
-                        <button
-                            type="button"
-                            class="sort-btn"
-                            class:active={sort?.key === col.key}
-                            onclick={() => onSort?.(col.key)}
-                        >
-                            {col.label}
-                            <img src={sortIcon} alt="" class="sort-icon" width="15" height="17" />
-                        </button>
-                    </th>
-                {/each}
-                <th class="col-action"><span>action</span></th>
-            </tr>
-        </thead>
-        <tbody>
-            {#each rows as row (row.id)}
-                <tr>
-                    <td class="col-name">{row.name}</td>
-                    <td class="col-num live">{row.live}</td>
-                    <td class="col-num previous">{row.previous}</td>
-                    <td class="col-action">
-                        <button type="button" class="action-btn" aria-label="Options de la ligne">
-                            <svg viewBox="0 0 19.953 20" aria-hidden="true">
-                                <path
-                                    fill="currentColor"
-                                    d="M17.9765 6.18V1C17.9765 0.734784 17.8711 0.48043 17.6836 0.292893C17.496 0.105357 17.2417 0 16.9765 0C16.7113 0 16.4569 0.105357 16.2694 0.292893C16.0818 0.48043 15.9765 0.734784 15.9765 1V6.18C15.3973 6.3902 14.8969 6.77363 14.5433 7.27816C14.1897 7.7827 14 8.38388 14 9C14 9.61612 14.1897 10.2173 14.5433 10.7218C14.8969 11.2264 15.3973 11.6098 15.9765 11.82V19C15.9765 19.2652 16.0818 19.5196 16.2694 19.7071C16.4569 19.8946 16.7113 20 16.9765 20C17.2417 20 17.496 19.8946 17.6836 19.7071C17.8711 19.5196 17.9765 19.2652 17.9765 19V11.82C18.5556 11.6098 19.056 11.2264 19.4096 10.7218C19.7633 10.2173 19.953 9.61612 19.953 9C19.953 8.38388 19.7633 7.7827 19.4096 7.27816C19.056 6.77363 18.5556 6.3902 17.9765 6.18ZM16.9765 10C16.7787 10 16.5854 9.94135 16.4209 9.83147C16.2565 9.72159 16.1283 9.56541 16.0526 9.38268C15.9769 9.19996 15.9571 8.99889 15.9957 8.80491C16.0343 8.61093 16.1295 8.43275 16.2694 8.29289C16.4092 8.15304 16.5874 8.0578 16.7814 8.01921C16.9754 7.98063 17.1764 8.00043 17.3592 8.07612C17.5419 8.15181 17.6981 8.27998 17.8079 8.44443C17.9178 8.60888 17.9765 8.80222 17.9765 9C17.9765 9.26522 17.8711 9.51957 17.6836 9.70711C17.496 9.89464 17.2417 10 16.9765 10ZM10.9765 12.18V1C10.9765 0.734784 10.8711 0.48043 10.6836 0.292893C10.496 0.105357 10.2417 0 9.97648 0C9.71126 0 9.45691 0.105357 9.26937 0.292893C9.08183 0.48043 8.97648 0.734784 8.97648 1V12.18C8.39732 12.3902 7.89694 12.7736 7.54332 13.2782C7.1897 13.7827 7 14.3839 7 15C7 15.6161 7.1897 16.2173 7.54332 16.7218C7.89694 17.2264 8.39732 17.6098 8.97648 17.82V19C8.97648 19.2652 9.08183 19.5196 9.26937 19.7071C9.45691 19.8946 9.71126 20 9.97648 20C10.2417 20 10.496 19.8946 10.6836 19.7071C10.8711 19.5196 10.9765 19.2652 10.9765 19V17.82C11.5556 17.6098 12.056 17.2264 12.4096 16.7218C12.7633 16.2173 12.953 15.6161 12.953 15C12.953 14.3839 12.7633 13.7827 12.4096 13.2782C12.056 12.7736 11.5556 12.3902 10.9765 12.18ZM9.97648 16C9.7787 16 9.58536 15.9414 9.42091 15.8315C9.25646 15.7216 9.12828 15.5654 9.0526 15.3827C8.97691 15.2 8.95711 14.9989 8.99569 14.8049C9.03428 14.6109 9.12952 14.4327 9.26937 14.2929C9.40922 14.153 9.58741 14.0578 9.78139 14.0192C9.97537 13.9806 10.1764 14.0004 10.3592 14.0761C10.5419 14.1518 10.6981 14.28 10.8079 14.4444C10.9178 14.6089 10.9765 14.8022 10.9765 15C10.9765 15.2652 10.8711 15.5196 10.6836 15.7071C10.496 15.8946 10.2417 16 9.97648 16ZM3.97648 4.18V1C3.97648 0.734784 3.87112 0.48043 3.68358 0.292893C3.49605 0.105357 3.24169 0 2.97648 0C2.71126 0 2.45691 0.105357 2.26937 0.292893C2.08183 0.48043 1.97648 0.734784 1.97648 1V4.18C1.39732 4.3902 0.896937 4.77363 0.543318 5.27817C0.1897 5.7827 0 6.38388 0 7C0 7.61612 0.1897 8.2173 0.543318 8.72184C0.896937 9.22637 1.39732 9.6098 1.97648 9.82V19C1.97648 19.2652 2.08183 19.5196 2.26937 19.7071C2.45691 19.8946 2.71126 20 2.97648 20C3.24169 20 3.49605 19.8946 3.68358 19.7071C3.87112 19.5196 3.97648 19.2652 3.97648 19V9.82C4.55563 9.6098 5.05602 9.22637 5.40964 8.72184C5.76325 8.2173 5.95295 7.61612 5.95295 7C5.95295 6.38388 5.76325 5.7827 5.40964 5.27817C5.05602 4.77363 4.55563 4.3902 3.97648 4.18ZM2.97648 8C2.7787 8 2.58536 7.94135 2.42091 7.83147C2.25646 7.72159 2.12828 7.56541 2.0526 7.38268C1.97691 7.19996 1.95711 6.99889 1.99569 6.80491C2.03428 6.61093 2.12952 6.43275 2.26937 6.29289C2.40922 6.15304 2.58741 6.0578 2.78139 6.01921C2.97537 5.98063 3.17643 6.00043 3.35916 6.07612C3.54189 6.15181 3.69806 6.27998 3.80795 6.44443C3.91783 6.60888 3.97648 6.80222 3.97648 7C3.97648 7.26522 3.87112 7.51957 3.68358 7.70711C3.49605 7.89464 3.24169 8 2.97648 8Z"
-                                />
-                            </svg>
-                        </button>
-                    </td>
-                </tr>
-            {/each}
-        </tbody>
-    </table>
+<section class="live-table" aria-labelledby="live-title">
+    <div class="bar">
+        <h2 id="live-title">Attractions</h2>
+        <div class="filters">
+            <input
+                type="search"
+                class="search"
+                placeholder="Rechercher…"
+                aria-label="Rechercher une attraction ou un quartier"
+                bind:value={search}
+            />
+            <select bind:value={type} aria-label="Filtrer par type">
+                {#each TYPE_FILTERS as f}<option value={f.key}>{f.label}</option>{/each}
+            </select>
+            <label class="toggle">
+                <input type="checkbox" bind:checked={openOnly} />
+                Ouvertes
+            </label>
+        </div>
+    </div>
 
-    {#if hasMore}
-        <button type="button" class="see-more" onclick={() => onMore?.()}>Voir plus</button>
+    {#if error}
+        <p class="state error" role="alert">
+            {error}
+            {#if onRetry}<button type="button" class="link" onclick={() => onRetry?.()}>Réessayer</button>{/if}
+        </p>
+    {/if}
+
+    {#if loading && !rides.length}
+        <ul class="skeleton" aria-label="Chargement">
+            {#each Array(8) as _}<li></li>{/each}
+        </ul>
+    {:else if !rides.length && !error}
+        <p class="state">Aucun relevé sur les 3 derniers jours.</p>
+    {:else if rides.length}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        {#each columns as col}
+                            <th
+                                class={col.cls}
+                                aria-sort={sort.key === col.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+                            >
+                                <button
+                                    type="button"
+                                    class="sort-btn"
+                                    class:active={sort.key === col.key}
+                                    onclick={() => onSort(col.key)}
+                                >
+                                    {col.label}
+                                    <img src={sortIcon} alt="" class="sort-icon" width="11" height="13" />
+                                </button>
+                            </th>
+                        {/each}
+                    </tr>
+                </thead>
+                <tbody>
+                    {#each visible as r (r.apiId)}
+                        {@const trend = waitTrend(r)}
+                        <tr class:virtual={r.type === "virtualline"}>
+                            <td class="col-name">
+                                {#if r.rideId}
+                                    <a class="name" href="/entities/{r.rideId}">{r.name}</a>
+                                {:else}
+                                    <span class="name" title="Absente du catalogue (ApiID {r.apiId})">{r.name}</span>
+                                {/if}
+                                <span class="sub">
+                                    <span class="badge {typeClass(r.type)}">{r.type ? typeLabel(r.type) : "non catalogué"}</span>
+                                    {#if r.land}<span class="land">{r.land}</span>{/if}
+                                </span>
+                            </td>
+                            <td class="col-num">
+                                <span class="wait {waitLevel(r.live)}">{waitText(r.live)}</span>
+                                {#if trend && trend.dir !== "flat"}
+                                    <span
+                                        class="trend {trend.dir}"
+                                        title="{trend.delta > 0 ? '+' : ''}{trend.delta} min depuis le relevé précédent"
+                                    >
+                                        {trend.dir === "up" ? "▲" : "▼"}
+                                    </span>
+                                {/if}
+                            </td>
+                            <td class="col-num">
+                                <span class="wait prev {waitLevel(r.previous)}">{waitText(r.previous)}</span>
+                            </td>
+                        </tr>
+                    {:else}
+                        <tr>
+                            <td colspan="3" class="empty">Aucune attraction ne correspond aux filtres.</td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+        <p class="count">{visible.length} / {rides.length} attractions · minutes d'attente</p>
     {/if}
 </section>
 
 <style>
     .live-table {
-        max-width: 820px;
+        min-width: 0;
         font-family: "Agdasima", sans-serif;
         color: var(--color-text);
+    }
+
+    .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px 16px;
+        margin-bottom: 10px;
+    }
+
+    h2 {
+        font-size: 36px;
+        font-weight: 400;
+    }
+
+    .filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .search,
+    select {
+        height: 34px;
+        min-width: 0;
+        padding: 0 10px;
+        border: 1px solid var(--color-line);
+        border-radius: 5px;
+        background: var(--color-surface);
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 18px;
+    }
+
+    .search {
+        width: 180px;
+    }
+
+    .search:focus,
+    select:focus {
+        outline: none;
+        border-color: var(--color-mint);
+    }
+
+    .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 18px;
+        cursor: pointer;
+    }
+
+    .toggle input {
+        accent-color: var(--color-mint);
+    }
+
+    .table-wrap {
+        max-height: 640px;
+        overflow-y: auto;
+        border-bottom: 1px solid var(--color-line);
     }
 
     table {
@@ -84,13 +249,17 @@
         border-collapse: collapse;
     }
 
-    th {
-        padding: 0 4px 6px;
-        font-size: 24px;
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 6px 8px;
+        background: var(--color-bg);
+        border-bottom: 1px solid var(--color-mint);
+        font-size: 20px;
         font-weight: 400;
         text-align: left;
-        color: var(--color-text);
-        border-bottom: 1px solid var(--color-mint);
+        white-space: nowrap;
     }
 
     .sort-btn {
@@ -109,66 +278,227 @@
         color: var(--color-mint);
     }
 
-    .sort-icon {
-        width: 15px;
-        height: 17px;
-    }
-
     td {
-        padding: 5px 4px 6px;
-        font-size: 32px;
-        border-bottom: 1px solid #0f0f0f;
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        vertical-align: middle;
     }
 
-    tbody tr:last-child td {
-        border-bottom: none;
+    tbody tr:hover {
+        background: rgba(95, 239, 193, 0.06);
     }
 
     .col-name {
-        width: 55.5%;
+        width: 100%;
     }
 
     .col-num {
-        width: 19.75%;
+        white-space: nowrap;
+        text-align: right;
     }
 
-    .col-action {
-        width: 5%;
-        text-align: center;
+    th.col-num {
+        text-align: right;
     }
 
-    .live {
-        color: var(--color-red);
+    .name {
+        display: block;
+        color: var(--color-text);
+        font-size: 22px;
+        line-height: 1.15;
+        text-decoration: none;
+        overflow-wrap: anywhere;
     }
 
-    .previous {
+    a.name:hover {
+        color: var(--color-mint);
+        text-decoration: underline;
+    }
+
+    .sub {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        margin-top: 2px;
+        font-size: 15px;
+    }
+
+    .land {
+        opacity: 0.7;
+    }
+
+    .badge {
+        padding: 0 6px;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        font-size: 14px;
+        line-height: 18px;
+    }
+
+    .type-coaster {
+        color: var(--color-purple);
+    }
+
+    .type-flat {
         color: var(--color-mint);
     }
 
-    .action-btn {
-        display: inline-flex;
-        padding: 4px;
+    .type-dark {
+        color: var(--color-gold-border);
+    }
+
+    .type-water {
+        color: var(--color-blue);
+    }
+
+    .type-show {
+        color: var(--color-lime);
+    }
+
+    .type-virtualline,
+    .type-none {
+        color: var(--color-line);
+    }
+
+    .wait {
+        display: inline-block;
+        min-width: 2ch;
+        font-size: 26px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .wait.prev {
+        font-size: 20px;
+        opacity: 0.8;
+    }
+
+    .wait.low {
+        color: var(--color-mint);
+    }
+
+    .wait.mid {
+        color: var(--color-gold-border);
+    }
+
+    .wait.high {
+        color: var(--color-red);
+    }
+
+    .wait.closed {
+        font-size: 18px;
+        opacity: 0.55;
+    }
+
+    .wait.none {
+        opacity: 0.4;
+    }
+
+    .trend {
+        margin-left: 2px;
+        font-size: 13px;
+        vertical-align: middle;
+    }
+
+    .trend.up {
+        color: var(--color-red);
+    }
+
+    .trend.down {
+        color: var(--color-mint);
+    }
+
+    tr.virtual {
+        opacity: 0.5;
+    }
+
+    tr.virtual .name {
+        font-size: 18px;
+    }
+
+    .empty {
+        padding: 20px 8px;
+        font-size: 20px;
+        text-align: center;
+        opacity: 0.7;
+    }
+
+    .count {
+        margin-top: 8px;
+        font-size: 16px;
+        opacity: 0.65;
+    }
+
+    .state {
+        padding: 12px 0;
+        color: var(--color-mint);
+        font-size: 20px;
+    }
+
+    .state.error {
+        color: var(--color-red);
+    }
+
+    .link {
+        margin-left: 10px;
+        padding: 0;
         border: none;
         background: none;
-        color: var(--color-text);
+        color: var(--color-mint);
+        font: inherit;
+        text-decoration: underline;
         cursor: pointer;
     }
 
-    .action-btn svg {
-        width: 20px;
-        height: 20px;
+    .skeleton {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     }
 
-    .see-more {
-        width: 109px;
-        height: 32px;
-        margin-top: 18px;
-        border: 1px solid var(--color-gold-border);
-        border-radius: 10px;
-        background: var(--color-gold);
-        color: var(--color-text);
-        font-family: inherit;
-        font-size: 20px;
-        cursor: pointer;
+    .skeleton li {
+        height: 46px;
+        border-radius: 5px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+        background-size: 200% 100%;
+        animation: shimmer 1.4s linear infinite;
+    }
+
+    @keyframes shimmer {
+        to {
+            background-position: -200% 0;
+        }
+    }
+
+    @media (max-width: 575px) {
+        .filters {
+            width: 100%;
+        }
+
+        .search {
+            flex: 1 1 140px;
+            width: auto;
+        }
+
+        select {
+            flex: 1 1 120px;
+        }
+
+        .name {
+            font-size: 19px;
+        }
+
+        .wait {
+            font-size: 22px;
+        }
+
+        thead th {
+            font-size: 17px;
+        }
+
+        td,
+        thead th {
+            padding: 6px 4px;
+        }
     }
 </style>

@@ -56,6 +56,7 @@
                 <a
                     href={link.href}
                     class="nav-link"
+                    title={link.label}
                     class:active={isActive(link.href)}
                     aria-current={page.url.pathname === link.href ? "page" : undefined}
                 >
@@ -72,7 +73,7 @@
                     >
                         {@html link.icon}
                     </svg>
-                    {link.label}
+                    <span class="nav-label">{link.label}</span>
                 </a>
             </li>
         {/each}
@@ -100,7 +101,7 @@
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            Déconnexion
+            <span class="nav-label">Déconnexion</span>
         </button>
     </div>
 </nav>
@@ -176,5 +177,40 @@
         font-size: 24px;
         text-align: left;
         cursor: pointer;
+    }
+
+    /* Narrow screens: collapse to an icon rail so pages keep their width (no horizontal scroll). */
+    @media (max-width: 767px) {
+        .nav-sidebar {
+            flex-shrink: 0;
+            width: 52px;
+            padding: 16px 0;
+            align-items: center;
+        }
+
+        .nav-logo {
+            width: 38px;
+            height: 38px;
+            margin-bottom: 28px;
+        }
+
+        .nav-links {
+            gap: 22px;
+        }
+
+        .nav-label,
+        .user {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        .nav-icon {
+            width: 26px;
+            height: 26px;
+        }
     }
 </style>
