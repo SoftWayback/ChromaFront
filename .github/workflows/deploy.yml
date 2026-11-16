@@ -1,0 +1,217 @@
+name: chromafront release
+
+# - push / PR        : vérifications seulement (svelte-check)
+# - release publiée  : build, push sur Docker Hub, puis déploiement
+#                      preprod si « pre-release », prod sinon
+# - workflow_dispatch : redéployer sans couper une release
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Cible du déploiement'
+        type: choice
+        options: [preprod, prod]
+        default: preprod
+
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois : deux runs concurrents laisseraient CapRover
+# dans un état imprévisible.
+concurrency:
+  group: chromafront-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: softwayback/chromafront
+  # Aligné sur le `FROM node:22-alpine` du Dockerfile : vérifier sur une autre
+  # version que celle qui build, c'est vérifier autre chose.
+  NODE_VERSION: '22'
+  # Noms des apps CapRover (https://caprover.galaxian.dev). À changer ici si les
+  # apps portent d'autres noms côté CapRover.
+  CAPROVER_APP_PREPROD: preprod-chroma-front
+  CAPROVER_APP_PROD: chroma-front
+
+jobs:
+  checks:
+    name: svelte-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # `PUBLIC_API_BASE_URL` doit exister dès le check : `$env/static/public`
+      # est typé à partir des variables présentes, et svelte-check échoue sur
+      # un export manquant. Sa valeur n'a aucune importance ici — rien n'est
+      # appelé —, donc un défaut local suffit si la Variable n'est pas définie.
+      - name: svelte-check
+        env:
+          PUBLIC_API_BASE_URL: ${{ vars.API_BASE_URL_PREPROD || 'http://localhost:3000' }}
+        run: npm run check
+
+  build:
+    name: Build & push
+    needs: [checks]
+    if: ${{ github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deux choses se décident ici :
+      #
+      # 1. la version. Une image par version, jamais un `latest` mouvant : sans
+      #    ça, déployer une pre-release tirait l'image de la dernière PROD,
+      #    puisque `latest` n'est pas publié pour une pre-release ;
+      # 2. la cible — et donc l'URL de l'API. Contrairement au back, le front
+      #    inline `PUBLIC_API_BASE_URL` dans le bundle au build : une image
+      #    n'est PAS réutilisable d'un environnement à l'autre. Le tag porte
+      #    donc le suffixe `-preprod` / `-prod`, pour qu'on ne puisse pas
+      #    promouvoir par erreur une image preprod en production.
+      - name: Calcul de la cible et des tags
+        id: tag
+        env:
+          IS_RELEASE: ${{ github.event_name == 'release' }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_TARGET: ${{ inputs.target }}
+          API_BASE_URL_PREPROD: ${{ vars.API_BASE_URL_PREPROD }}
+          API_BASE_URL_PROD: ${{ vars.API_BASE_URL_PROD }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_RELEASE" = "true" ]; then
+            VERSION="$RELEASE_TAG"
+            if [ "$IS_PRERELEASE" = "true" ]; then TARGET=preprod; else TARGET=prod; fi
+          else
+            VERSION="sha-${GITHUB_SHA::7}"
+            TARGET="$DISPATCH_TARGET"
+          fi
+
+          if [ "$TARGET" = "prod" ]; then
+            API_BASE="$API_BASE_URL_PROD"; VAR_NAME=API_BASE_URL_PROD
+          else
+            API_BASE="$API_BASE_URL_PREPROD"; VAR_NAME=API_BASE_URL_PREPROD
+          fi
+          if [ -z "$API_BASE" ]; then
+            echo "::error::Variable $VAR_NAME vide. Settings → Secrets and variables → Actions, onglet « Variables » : l'URL publique de ChromaBack pour cette cible, sans slash final (ex. https://chroma-back.galaxian.dev). Elle est inlinée dans le bundle au build."
+            exit 1
+          fi
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE:$VERSION-$TARGET" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<__EOT__"
+            echo "$IMAGE:$VERSION-$TARGET"
+            # `latest` ne doit désigner que ce qui tourne en production.
+            if [ "$IS_RELEASE" = "true" ] && [ "$IS_PRERELEASE" != "true" ]; then
+              echo "$IMAGE:latest"
+            fi
+            echo "__EOT__"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # `vars.*` lit les Variables du dépôt, `secrets.*` les Secrets : deux
+      # magasins distincts. Un identifiant rangé dans le mauvais des deux
+      # résout en chaîne vide, et Docker Hub répond alors « malformed HTTP
+      # Authorization header » — illisible. On échoue ici, avec la raison.
+      - name: Vérification des identifiants Docker Hub
+        env:
+          DOCKER_USER: ${{ vars.DOCKER_USERNAME || secrets.DOCKER_USERNAME }}
+          DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
+        run: |
+          fail=0
+          if [ -z "$DOCKER_USER" ]; then
+            echo "::error::DOCKER_USERNAME est vide. Crée-le dans Settings → Secrets and variables → Actions, onglet « Variables » (ou « Secrets »), avec ton identifiant Docker Hub — pas ton e-mail."
+            fail=1
+          fi
+          if [ -z "$DOCKER_PASS" ]; then
+            echo "::error::DOCKER_PASSWORD est vide. Attendu : un Personal Access Token Docker Hub."
+            fail=1
+          elif [ "$DOCKER_PASS" != "$(printf '%s' "$DOCKER_PASS")" ]; then
+            echo "::error::DOCKER_PASSWORD contient un retour à la ligne ou une espace finale — recolle-le sans passer à la ligne. C'est l'autre cause du header malformé."
+            fail=1
+          fi
+          exit $fail
+
+      - name: Connexion à Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKER_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build et push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tag.outputs.tags }}
+          build-args: |
+            PUBLIC_API_BASE_URL=${{ steps.tag.outputs.api_base }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-preprod:
+    name: Déploiement preprod
+    needs: [build]
+    if: ${{ (github.event_name == 'release' && github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.target == 'preprod') }}
+    runs-on: ubuntu-latest
+    environment: preprod
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Deploy on preprod
+        env:
+          CAPROVER_URL: ${{ secrets.CAPROVER_HOST }}
+          CAPROVER_TOKEN: ${{ secrets.CAPROVER_APP_TOKEN_PREPROD }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          : "${CAPROVER_URL:?secret CAPROVER_HOST manquant}"
+          : "${CAPROVER_TOKEN:?secret CAPROVER_APP_TOKEN_PREPROD manquant}"
+          npx --yes caprover@2 deploy \
+            --caproverUrl "$CAPROVER_URL" \
+            --appToken "$CAPROVER_TOKEN" \
+            --caproverApp "$CAPROVER_APP_PREPROD" \
+            --imageName "$IMAGE_REF"
+
+  deploy-prod:
+    name: Déploiement production
+    needs: [build]
+    if: ${{ (github.event_name == 'release' && !github.event.release.prerelease) || (github.event_name == 'workflow_dispatch' && inputs.target == 'prod') }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Deploy on prod
+        env:
+          CAPROVER_URL: ${{ secrets.CAPROVER_HOST }}
+          CAPROVER_TOKEN: ${{ secrets.CAPROVER_APP_TOKEN_PROD }}
+          IMAGE_REF: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          : "${CAPROVER_URL:?secret CAPROVER_HOST manquant}"
+          : "${CAPROVER_TOKEN:?secret CAPROVER_APP_TOKEN_PROD manquant}"
+          npx --yes caprover@2 deploy \
+            --caproverUrl "$CAPROVER_URL" \
+            --appToken "$CAPROVER_TOKEN" \
+            --caproverApp "$CAPROVER_APP_PROD" \
+            --imageName "$IMAGE_REF"

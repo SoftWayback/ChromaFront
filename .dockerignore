@@ -1,0 +1,21 @@
+# Contexte de build : tout ce qui n'est pas nécessaire à `npm ci && npm run build`.
+# Sans ce fichier, `COPY . .` embarque .env (secrets), node_modules (compilés
+# pour l'OS hôte) et .git dans une couche de l'image.
+
+node_modules
+.git
+.github
+.vscode
+.claude
+.svelte-kit
+build
+
+# Secrets : en conteneur les variables viennent de l'orchestrateur (CapRover),
+# sauf PUBLIC_API_BASE_URL qui est un --build-arg (voir Dockerfile).
+.env
+.env.*
+
+# Documentation
+docs
+README.md
+CLAUDE.md

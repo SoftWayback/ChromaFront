@@ -20,7 +20,7 @@ There is no test runner or lint script configured in `package.json` — don't as
 
 ## Architecture
 
-- SvelteKit with `adapter-auto` (svelte.config.js) — no deployment target has been pinned yet, so adapter choice is environment-dependent.
+- SvelteKit with `adapter-node` (svelte.config.js) — the target is a Node server in a Docker image on CapRover, see "Deployment" below.
 - Routing is filesystem-based under `src/routes`:
   - `/` (`+page.svelte`) — the landing / sign-in page (Sidebar + HeroImage).
   - `/login` — where the backend redirects after a successful Google login; confirms the session then bounces to `/dashboard` or `/`.
@@ -52,5 +52,33 @@ There is no test runner or lint script configured in `package.json` — don't as
 
 - Auth uses the **authorization-code flow**, owned by the separate backend (`chromaback`, dev port 3000). The frontend does not touch Google directly, holds no client secret, and does no token verification. Full setup + the backend contract live in `docs/google-oauth-setup.md`.
 - `src/lib/components/GoogleSignInButton.svelte` is just a styled `<a>` (white button per the Figma `home` frame) pointing at `${PUBLIC_API_BASE_URL}/google/login`. The backend runs the Google redirect, exchanges the `code`, verifies the `id_token`, sets an `HttpOnly` session cookie, and redirects back.
-- Requires `PUBLIC_API_BASE_URL` in `.env` (see `.env.example`), read via `$env/static/public` — the key must exist at build/check time or `svelte-check`/`vite build` fail with a missing-export error.
+- Requires `PUBLIC_API_BASE_URL` in `.env` (see `.env.example`), read via `$env/static/public` — the key must exist at build/check time or `svelte-check`/`vite build` fail with a missing-export error. Being a build-time value, it is **not** settable from the CapRover app's variables: see "Deployment".
 - Wired into `Sidebar.svelte` (which renders `GoogleSignInButton` with no props). The backend implements `/google/login`, `/google/callback`, `/status/ping` (returns identity), `/account/token` (refresh), `/logout`. What's left is the manual Google Cloud Console step (register the redirect URI) before a real end-to-end login works.
+
+## Deployment
+
+Docker image on CapRover, same pipeline as ChromaBack and the CAGE project. [Dockerfile](Dockerfile)
+builds with `node:22-alpine` (`npm ci`, `npm run build`, `npm prune --omit=dev`) and the runtime
+stage runs `node build/index.js` on port 3000 — set CapRover's **Container HTTP Port to 3000**, it
+defaults to 80. `adapter-node` also wants `ORIGIN` (the app's exact public URL, no trailing slash)
+in the CapRover app's variables. [captain-definition](captain-definition) points CapRover at the
+Dockerfile.
+
+**`PUBLIC_API_BASE_URL` is a `--build-arg`, not a runtime variable.** SvelteKit inlines
+`$env/static/public` into the bundle at build time, so the API URL is frozen into the image: an
+image is tied to one environment. Consequences, all handled by
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml):
+
+- the workflow reads the URL from the `API_BASE_URL_PREPROD` / `API_BASE_URL_PROD` repository
+  *Variables* and passes it as a build-arg;
+- image tags carry a `-preprod` / `-prod` suffix, so a preprod image cannot be promoted to
+  production by mistake — a prod deploy means a fresh build;
+- the Dockerfile fails early, with the reason, when the build-arg is missing;
+- the `svelte-check` job sets a throwaway value, since the key only has to *exist* at check time.
+
+A push or PR runs `svelte-check` only. Publishing a release builds, pushes to Docker Hub
+(`softwayback/chromafront`) and deploys with the `caprover@2` CLI: preprod for a pre-release,
+production otherwise. `workflow_dispatch` redeploys a chosen target. Needs the `DOCKER_USERNAME`,
+`API_BASE_URL_PREPROD` and `API_BASE_URL_PROD` variables, the `DOCKER_PASSWORD` / `CAPROVER_HOST` /
+`CAPROVER_APP_TOKEN_PREPROD` / `CAPROVER_APP_TOKEN_PROD` secrets, and `preprod` / `production`
+environments. App names are in the workflow's `env:` block (`chroma-front`, `preprod-chroma-front`).
