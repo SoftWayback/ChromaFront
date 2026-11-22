@@ -8,14 +8,17 @@
         STATUS_LABELS,
         ApiError,
         articleCoverUrl,
+        articleSiteUrl,
         createArticle,
         deleteArticle,
         deleteArticleCover,
         formatDate,
         getArticle,
+        paragraphs,
         slugify,
         updateArticle,
-        uploadArticleCover
+        uploadArticleCover,
+        wordCount
     } from "$lib/articles";
 
     /** @typedef {import("$lib/articles").AdminArticle} AdminArticle */
@@ -65,8 +68,21 @@
     // $derived.by: a closure, so TS doesn't narrow `article` to its `null` initializer
     const coverSrc = $derived.by(() => articleCoverUrl(article?.coverPath));
     const excerptLength = $derived(form.excerpt.length);
-    const paragraphs = $derived(form.content.split(/\n\s*\n/).filter((p) => p.trim()).length);
-    const words = $derived(form.content.trim() ? form.content.trim().split(/\s+/).length : 0);
+    const previewParagraphs = $derived(paragraphs(form.content));
+    const paragraphCount = $derived(previewParagraphs.length);
+    const words = $derived(wordCount(form.content));
+    const chars = $derived(form.content.length);
+    // ~200 words per minute
+    const readMinutes = $derived(Math.max(1, Math.round(words / 200)));
+    // saved state only: a draft or an unsaved slug has no public page yet
+    const siteUrl = $derived.by(() => (article?.status === "published" ? articleSiteUrl(article.slug) : null));
+    /** @type {"edit" | "split" | "preview"} */
+    let view = $state("edit");
+    const VIEWS = /** @type {const} */ ([
+        { key: "edit", label: "Écrire" },
+        { key: "split", label: "Côte à côte" },
+        { key: "preview", label: "Aperçu" }
+    ]);
     const unpublishing = $derived.by(() => article?.status === "published" && form.status === "draft");
 
     /** @param {AdminArticle} a @returns {Form} */
@@ -283,14 +299,20 @@
 <a class="back" href="/articles">← Articles</a>
 
 {#if loading}
-    <p class="state">Chargement…</p>
+    <p class="state"><span class="spinner" aria-hidden="true"></span> Chargement…</p>
 {:else if loadError}
-    <p class="state error">{loadError}</p>
+    <div class="banner error" role="alert">
+        <span>{loadError}</span>
+        <button type="button" class="btn ghost" onclick={() => load(id)}>Réessayer</button>
+    </div>
 {:else}
     <header class="head">
         <h1>{isNew ? "Nouvel article" : form.title.trim() || "(Sans titre)"}</h1>
         {#if article}
             <span class="badge {article.status}">{STATUS_LABELS[article.status]}</span>
+        {/if}
+        {#if siteUrl}
+            <a class="ext" href={siteUrl} target="_blank" rel="noopener noreferrer">Voir sur le site ↗</a>
         {/if}
         {#if dirty}<span class="unsaved">● Non enregistré</span>{/if}
     </header>
@@ -323,7 +345,7 @@
                         {:else}
                             <span class="hint">Glisse une image ici<br />ou utilise le bouton ci-dessous</span>
                         {/if}
-                        {#if coverBusy}<div class="overlay">Envoi…</div>{/if}
+                        {#if coverBusy}<div class="overlay"><span><span class="spinner" aria-hidden="true"></span> Envoi…</span></div>{/if}
                         {#if dragOver}<div class="overlay">Dépose pour remplacer</div>{/if}
                     </div>
 
@@ -454,19 +476,57 @@
                 {/if}
             </label>
 
-            <label class="field">
+            <div class="field">
                 <span class="label-row">
-                    Contenu
-                    <em>{paragraphs} paragraphe{paragraphs > 1 ? "s" : ""} · {words} mot{words > 1 ? "s" : ""}</em>
+                    <label for="article-content">Contenu</label>
+                    <em>
+                        {paragraphCount} paragraphe{paragraphCount > 1 ? "s" : ""} · {words} mot{words > 1 ? "s" : ""}
+                        · {chars.toLocaleString("fr-FR")} caractère{chars > 1 ? "s" : ""}{#if words} · ~{readMinutes} min de lecture{/if}
+                    </em>
                 </span>
-                <textarea class="content" bind:value={form.content} rows="22" placeholder="Premier paragraphe…&#10;&#10;Deuxième paragraphe…"></textarea>
-                <small class="hint-text">Texte brut : sépare les paragraphes par une ligne vide (deux retours à la ligne).</small>
-            </label>
+                <div class="view-toggle" role="group" aria-label="Affichage du contenu">
+                    {#each VIEWS as v}
+                        <button
+                            type="button"
+                            class="view-option"
+                            class:active={view === v.key}
+                            class:split-only={v.key === "split"}
+                            aria-pressed={view === v.key}
+                            onclick={() => (view = v.key)}
+                        >
+                            {v.label}
+                        </button>
+                    {/each}
+                </div>
+                <div class="editor {view}">
+                    <textarea
+                        id="article-content"
+                        class="content"
+                        bind:value={form.content}
+                        rows="22"
+                        placeholder="Premier paragraphe…&#10;&#10;Deuxième paragraphe…"
+                    ></textarea>
+                    <article class="preview" aria-label="Aperçu du contenu">
+                        <p class="preview-tag">Aperçu (rendu du site)</p>
+                        <h3 class="preview-title">{form.title.trim() || "(Sans titre)"}</h3>
+                        {#if form.excerpt.trim()}<p class="preview-excerpt">{form.excerpt.trim()}</p>{/if}
+                        {#each previewParagraphs as p, i (i)}
+                            <p class="preview-p">{p}</p>
+                        {:else}
+                            <p class="preview-empty">Le contenu apparaîtra ici.</p>
+                        {/each}
+                    </article>
+                </div>
+                <small class="hint-text">
+                    Texte brut : sépare les paragraphes par une ligne vide (deux retours à la ligne). Un simple retour à la
+                    ligne reste dans le paragraphe.
+                </small>
+            </div>
 
             <div class="actions">
                 <button type="submit" class="btn primary" disabled={saving || (!dirty && !isNew)}>
                     {#if saving}
-                        Enregistrement…
+                        <span class="spinner" aria-hidden="true"></span> Enregistrement…
                     {:else if isNew}
                         {form.status === "published" ? "Créer et publier" : "Créer le brouillon"}
                     {:else}
@@ -520,6 +580,7 @@
 
     h1 {
         min-width: 0;
+        max-width: 100%;
         overflow: hidden;
         font-size: 64px;
         font-weight: 400;
@@ -851,12 +912,190 @@
     }
 
     .state {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         padding: 16px 0;
-        font-size: 24px;
+        font-size: 22px;
         color: var(--color-mint);
     }
 
-    .state.error {
+    .banner {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        max-width: 1355px;
+        margin-top: 16px;
+        padding: 12px 18px;
+        border-radius: 5px;
+        font-size: 22px;
+    }
+
+    .banner.error {
+        border: 1px solid var(--color-red);
         color: var(--color-red);
+    }
+
+    .ext {
+        color: var(--color-mint);
+        font-size: 20px;
+    }
+
+    .side .panel {
+        padding: 16px;
+        border: 1px solid var(--color-line);
+        border-radius: 5px;
+        background: var(--color-surface);
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .btn:hover:not(:disabled) {
+        filter: brightness(1.15);
+    }
+
+    .btn:disabled {
+        cursor: not-allowed;
+    }
+
+    .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        vertical-align: middle;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* ── content: write / side by side / preview ── */
+    .view-toggle {
+        display: inline-flex;
+        align-self: flex-start;
+        overflow: hidden;
+        border: 1px solid var(--color-line);
+        border-radius: 10px;
+    }
+
+    .view-option {
+        height: 34px;
+        padding: 0 14px;
+        border: none;
+        background: none;
+        color: var(--color-text);
+        font-family: inherit;
+        font-size: 18px;
+        cursor: pointer;
+        opacity: 0.7;
+    }
+
+    .view-option.active {
+        background: var(--color-surface-end);
+        color: var(--color-mint);
+        opacity: 1;
+    }
+
+    .editor {
+        display: grid;
+        gap: 16px;
+        min-width: 0;
+    }
+
+    .editor.split {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .editor.edit .preview,
+    .editor.preview textarea {
+        display: none;
+    }
+
+    .preview {
+        min-width: 0;
+        min-height: 420px;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 18px 22px;
+        border: 1px solid var(--color-mint);
+        border-radius: 5px;
+        background: var(--color-surface);
+        font-size: 20px;
+        line-height: 1.5;
+    }
+
+    .preview-tag {
+        margin-bottom: 8px;
+        color: var(--color-mint);
+        font-size: 15px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        opacity: 0.7;
+    }
+
+    .preview-title {
+        margin-bottom: 8px;
+        font-size: 32px;
+        font-weight: 400;
+        line-height: 1.1;
+        overflow-wrap: anywhere;
+    }
+
+    .preview-excerpt {
+        margin-bottom: 14px;
+        color: var(--color-mint);
+        font-size: 21px;
+    }
+
+    .preview-p {
+        margin-bottom: 1em;
+        white-space: pre-line; /* single line breaks stay inside the paragraph, like TimeFront */
+        overflow-wrap: break-word;
+    }
+
+    .preview-empty {
+        opacity: 0.55;
+    }
+
+    @media (max-width: 1100px) {
+        .editor.split {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .view-option.split-only {
+            display: none;
+        }
+    }
+
+    @media (max-width: 575px) {
+        h1 {
+            font-size: 44px;
+        }
+
+        .preview {
+            padding: 14px;
+        }
+
+        textarea.content {
+            min-height: 300px;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .spinner {
+            animation-duration: 2.4s;
+        }
     }
 </style>

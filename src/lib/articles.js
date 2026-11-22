@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiFetch, refreshSession } from "$lib/api";
+import { API_BASE_URL, PUBLIC_SITE_URL, apiFetch, refreshSession } from "$lib/api";
 
 /**
  * @typedef {"draft" | "published"} ArticleStatus
@@ -179,7 +179,31 @@ export function slugify(text) {
         .replace(/-+$/, "");
 }
 
-const DATE_FMT = new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+/**
+ * Plain text → paragraphs, split on blank lines exactly like TimeFront renders
+ * article content and ride descriptions (single line breaks stay inside a paragraph).
+ * @param {string | null | undefined} text
+ */
+export function paragraphs(text) {
+    return (text ?? "")
+        .replace(/\r\n?/g, "\n")
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+}
+
+/** @param {string | null | undefined} text */
+export function wordCount(text) {
+    const t = (text ?? "").trim();
+    return t ? t.split(/\s+/).length : 0;
+}
+
+/** @param {string | null | undefined} slug published article → TimeFront page */
+export function articleSiteUrl(slug) {
+    return slug ? `${PUBLIC_SITE_URL}/articles/${encodeURIComponent(slug)}` : null;
+}
+
+const DATE_FMT =new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" });
 
 /** @param {string | null | undefined} iso */
 export function formatDate(iso) {

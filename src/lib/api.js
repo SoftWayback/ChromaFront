@@ -4,6 +4,13 @@ import { PUBLIC_API_BASE_URL } from "$env/static/public";
 export const API_BASE_URL = PUBLIC_API_BASE_URL;
 
 /**
+ * Public site (TimeFront), for the "voir sur le site" links. There is no env
+ * var for it, so it's the production URL (dev TimeFront runs on
+ * http://localhost:5180 — swap here if needed).
+ */
+export const PUBLIC_SITE_URL = "https://time.galaxian.dev";
+
+/**
  * fetch() against the API with the session cookies always attached.
  * The access_token / refresh_token cookies are SameSite=None; Secure, so
  * `credentials: "include"` is mandatory on every call.
